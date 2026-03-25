@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Biology Teaching Tool: Capillary Blood Flow</title>
+    <style>
+      :root {
+        --primary-red: #c62828;
+        --light-red: #ffcdd2;
+        --bg-color: #f1f5f9;
+        --card-bg: #ffffff;
+        --text-main: #1e293b;
+        --text-muted: #475569;
+        --accent-blue: #0284c7;
+      }
+
+      body {
+        font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        background-color: var(--bg-color);
+        color: var(--text-main);
+        margin: 0;
+        padding: 20px;
+        display: flex;
+        justify-content: center;
+      }
+
+      .dashboard {
+        max-width: 1400px;
+        width: 100%;
+      }
+
+      /* Simulation Panel Styles */
+      .sim-panel {
+        background: var(--card-bg);
+        padding: 25px;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .sim-panel h2 {
+        margin: 0;
+        color: var(--primary-red);
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 15px;
+      }
+
+      .stat-box {
+        background: #fff5f5;
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid #fecdd3;
+        text-align: center;
+      }
+
+      .stat-label {
+        font-size: 0.85em;
+        font-weight: bold;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        margin-bottom: 5px;
+      }
+
+      .stat-value {
+        font-size: 1.8em;
+        font-weight: 900;
+        color: var(--primary-red);
+      }
+
+      .unit {
+        font-size: 0.5em;
+        color: #ef4444;
+      }
+
+      .canvas-container {
+        position: relative;
+        width: 100%;
+      }
+
+      canvas {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        width: 100%;
+        height: auto;
+      }
+
+      .annotation {
+        position: absolute;
+        bottom: -25px;
+        font-weight: bold;
+        color: var(--text-muted);
+        font-size: 0.9em;
+      }
+
+      /* Controls (kept inside tool) */
+      .controls {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .control-row {
+        display: flex;
+        gap: 10px;
+      }
+
+      button {
+        flex: 1;
+        padding: 12px;
+        font-size: 0.95em;
+        font-weight: bold;
+        color: white;
+        background-color: var(--primary-red);
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      button.secondary {
+        background-color: var(--text-muted);
+      }
+
+      button:hover:not(:disabled) {
+        filter: brightness(0.9);
+        transform: translateY(-1px);
+      }
+
+      button:disabled {
+        background-color: #cbd5e1;
+        cursor: not-allowed;
+      }
+
+      @media (max-width: 720px) {
+        .stats {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="dashboard">
+      <div class="sim-panel">
+        <h2>Capillary Network Simulation</h2>
+
+        <div class="stats">
+          <div class="stat-box">
+            <div class="stat-label">Total Capillaries</div>
+            <div class="stat-value" id="capCountDisp">1</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Total Area (A)</div>
+            <div class="stat-value"><span id="totalAreaDisp">8</span> <span class="unit">cm²</span></div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Blood Velocity (v)</div>
+            <div class="stat-value"><span id="capVelDisp">62.50</span> <span class="unit">cm/s</span></div>
+          </div>
+        </div>
+
+        <div class="controls" aria-label="Simulation controls">
+          <div class="control-row">
+            <button id="addBtn">➕ Add 1</button>
+            <button id="addFiveBtn">➕ Add 5</button>
+          </div>
+          <div class="control-row">
+            <button id="removeBtn" class="secondary">➖ Remove 1</button>
+            <button id="removeAllBtn" class="secondary" style="background-color: #475569">
+              ⏮️ Reset to 1
+            </button>
+          </div>
+        </div>
+
+        <div class="canvas-container">
+          <canvas id="simCanvas" width="1600" height="700"></canvas>
+          <div class="annotation" style="left: 10%">High Velocity (Artery)</div>
+          <div class="annotation" style="right: 20%; color: var(--accent-blue)">
+            Exchange Zone (Capillary Bed)
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const canvas = document.getElementById('simCanvas')
+      const ctx = canvas.getContext('2d')
+
+      // Physics Constants
+      const flowRateQ = 500
+      const arteryArea = 100
+      const singleCapillaryArea = 8
+
+      // State
+      let numCapillaries = 1
+      const maxCapillaries = 40
+      const minCapillaries = 1
+
+      // UI Elements
+      const addBtn = document.getElementById('addBtn')
+      const addFiveBtn = document.getElementById('addFiveBtn')
+      const removeBtn = document.getElementById('removeBtn')
+      const removeAllBtn = document.getElementById('removeAllBtn')
+      const capCountDisp = document.getElementById('capCountDisp')
+      const totalAreaDisp = document.getElementById('totalAreaDisp')
+      const capVelDisp = document.getElementById('capVelDisp')
+
+      // Particles
+      const numParticles = 700
+      let particles = []
+      const splitX = canvas.width * 0.35
+
+      for (let i = 0; i < numParticles; i++) {
+        particles.push(createParticle(true))
+      }
+
+      function createParticle(randomX = false) {
+        return {
+          x: randomX ? Math.random() * canvas.width : -30,
+          yOffset: Math.random(),
+          targetCapillary: -1,
+          size: Math.random() * 3 + 4,
+          speedVariance: Math.random() * 0.2 + 0.9,
+        }
+      }
+
+      // Event Listeners
+      addBtn.addEventListener('click', () => {
+        if (numCapillaries < maxCapillaries) numCapillaries++
+        updateUI()
+      })
+
+      addFiveBtn.addEventListener('click', () => {
+        numCapillaries = Math.min(maxCapillaries, numCapillaries + 5)
+        updateUI()
+      })
+
+      removeBtn.addEventListener('click', () => {
+        if (numCapillaries > minCapillaries) numCapillaries--
+        updateUI()
+      })
+
+      removeAllBtn.addEventListener('click', () => {
+        numCapillaries = 1
+        updateUI()
+      })
+
+      function updateUI() {
+        addBtn.disabled = numCapillaries === maxCapillaries
+        addFiveBtn.disabled = numCapillaries === maxCapillaries
+        removeBtn.disabled = numCapillaries === minCapillaries
+        removeAllBtn.disabled = numCapillaries === minCapillaries
+
+        const totalCapArea = numCapillaries * singleCapillaryArea
+        const capVelocity = flowRateQ / totalCapArea
+
+        capCountDisp.innerText = numCapillaries
+        totalAreaDisp.innerText = totalCapArea
+        capVelDisp.innerText = capVelocity.toFixed(2)
+      }
+
+      const arteryGradient = ctx.createLinearGradient(0, 0, 0, canvas.height)
+      arteryGradient.addColorStop(0, '#ffebee')
+      arteryGradient.addColorStop(1, '#ffcdd2')
+
+      const capGradient = ctx.createLinearGradient(0, 0, canvas.width, 0)
+      capGradient.addColorStop(0, '#ffebee')
+      capGradient.addColorStop(1, '#f0f9ff') // Transitions to slightly blueish to hint at gas exchange
+
+      function animate() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+        const arteryVelocity = flowRateQ / arteryArea
+        const totalCapArea = numCapillaries * singleCapillaryArea
+        const capVelocity = flowRateQ / totalCapArea
+
+        const arteryHeight = 250
+        const arteryStartY = (canvas.height - arteryHeight) / 2
+
+        const availableHeight = canvas.height - 40
+        const capHeight = Math.min(40, availableHeight / (numCapillaries * 1.5))
+        const capSpacing = (canvas.height - numCapillaries * capHeight) / (numCapillaries + 1)
+
+        // Draw Artery
+        ctx.fillStyle = arteryGradient
+        ctx.fillRect(0, arteryStartY, splitX, arteryHeight)
+        ctx.strokeStyle = '#ef9a9a'
+        ctx.lineWidth = 4
+        ctx.beginPath()
+        ctx.moveTo(0, arteryStartY)
+        ctx.lineTo(splitX, arteryStartY)
+        ctx.moveTo(0, arteryStartY + arteryHeight)
+        ctx.lineTo(splitX, arteryStartY + arteryHeight)
+        ctx.stroke()
+
+        // Draw Capillaries
+        for (let i = 0; i < numCapillaries; i++) {
+          const capY = capSpacing + i * (capHeight + capSpacing)
+
+          ctx.fillStyle = capGradient
+          ctx.beginPath()
+          ctx.moveTo(splitX, arteryStartY)
+          ctx.lineTo(splitX + 80, capY)
+          ctx.lineTo(splitX + 80, capY + capHeight)
+          ctx.lineTo(splitX, arteryStartY + arteryHeight)
+          ctx.fill()
+
+          ctx.fillRect(splitX + 78, capY, canvas.width - splitX, capHeight)
+
+          ctx.strokeStyle = '#f8bbd0'
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.moveTo(splitX, arteryStartY)
+          ctx.lineTo(splitX + 80, capY)
+          ctx.lineTo(canvas.width, capY)
+          ctx.moveTo(splitX, arteryStartY + arteryHeight)
+          ctx.lineTo(splitX + 80, capY + capHeight)
+          ctx.lineTo(canvas.width, capY + capHeight)
+          ctx.stroke()
+        }
+
+        // Draw Particles
+        for (const p of particles) {
+          const currentV = p.x < splitX ? arteryVelocity : capVelocity
+
+          p.x += currentV * 3 * p.speedVariance
+
+          if (p.x >= splitX && p.targetCapillary === -1) {
+            p.targetCapillary = Math.floor(Math.random() * numCapillaries)
+            p.yOffset = Math.random()
+          }
+
+          let actualY
+          if (p.x < splitX) {
+            actualY = arteryStartY + p.yOffset * arteryHeight
+            actualY = Math.max(
+              arteryStartY + p.size + 2,
+              Math.min(arteryStartY + arteryHeight - p.size - 2, actualY),
+            )
+          } else {
+            if (p.targetCapillary >= numCapillaries) {
+              p.targetCapillary = Math.floor(Math.random() * numCapillaries)
+            }
+            const capY = capSpacing + p.targetCapillary * (capHeight + capSpacing)
+
+            if (p.x < splitX + 80) {
+              const progress = (p.x - splitX) / 80
+              const startY = arteryStartY + p.yOffset * arteryHeight
+              const endY = capY + p.yOffset * capHeight
+              actualY = startY + (endY - startY) * progress
+            } else {
+              actualY = capY + p.yOffset * capHeight
+              actualY = Math.max(capY + p.size + 1, Math.min(capY + capHeight - p.size - 1, actualY))
+            }
+          }
+
+          // Color change to simulate oxygen drop
+          if (p.x > splitX + 80) {
+            const progress = Math.min(1, (p.x - (splitX + 80)) / (canvas.width * 0.4))
+            // Transition from red to a slightly purple/deoxygenated hue
+            const r = Math.floor(239 - 100 * progress)
+            const b = Math.floor(80 + 100 * progress)
+            ctx.fillStyle = `rgb(${r}, 83, ${b})`
+          } else {
+            ctx.fillStyle = '#ef5350'
+          }
+
+          ctx.strokeStyle = '#b71c1c'
+          ctx.lineWidth = 2
+
+          ctx.beginPath()
+          ctx.arc(p.x, actualY, p.size, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.stroke()
+
+          if (p.x > canvas.width) {
+            Object.assign(p, createParticle())
+          }
+        }
+
+        requestAnimationFrame(animate)
+      }
+
+      updateUI()
+      animate()
+    </script>
+  </body>
+</html>
+
